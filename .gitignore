@@ -11,8 +11,6 @@ web-ext-artifacts/
 
 .DS_Store
 
-# local tooling config
+# local editor / tooling files, not part of the extension
 .claude/
-
-# Claude Code agent context — local only, never publish
 CLAUDE.md
