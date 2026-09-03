@@ -1,0 +1,18 @@
+node_modules/
+package-lock.json
+
+# test output
+out.html
+
+# build artefacts
+web-ext-artifacts/
+*.xpi
+*.zip
+
+.DS_Store
+
+# local tooling config
+.claude/
+
+# Claude Code agent context — local only, never publish
+CLAUDE.md
