@@ -179,7 +179,6 @@ node test-markdown.js   # heading demotion, turn separators, code-fence safety
 
 | File | Purpose |
 |---|---|
-| `CLAUDE.md` | Context for Claude Code: architecture, invariants, browser gotchas |
 | `PRIVACY.md` | Privacy policy (required for AMO submission) |
 | `build.sh` | Packages an unsigned `.xpi` with the manifest at the archive root |
 | `test-*.js` | jsdom suites: conversion, injection safety, Markdown structure |
