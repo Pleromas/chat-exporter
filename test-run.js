@@ -4,16 +4,17 @@ const { JSDOM } = require('jsdom');
 
 const FIXTURE = `
 <div id="thread">
-  <article data-testid="conversation-turn-1">
-    <div data-message-author-role="user" data-message-id="u1">
-      <div class="whitespace-pre-wrap">How do I read a file in Python?
+  <div data-turn-key="t1">
+    <h4 class="sr-only">You said:</h4>
+    <div data-user-message-bubble="true" data-chatgpt-selection-message-id="u1">
+      <div class="text-size-chat whitespace-pre-wrap">How do I read a file in Python?
 Second line here.</div>
     </div>
-  </article>
+  </div>
 
-  <article data-testid="conversation-turn-2">
-    <div data-message-author-role="assistant" data-message-id="a1" data-message-model-slug="gpt-5">
-      <div class="markdown prose">
+  <div data-turn-key="t2">
+    <h4 class="sr-only">ChatGPT said:</h4>
+    <div class="MarkdownRoot-rZKhxa" data-chatgpt-selection-message-id="a1">
         <p>Use <code>open()</code> with a <strong>context manager</strong>. It's the <em>safe</em> way.</p>
         <h3>Example</h3>
         <pre class="overflow-x-auto">
@@ -47,9 +48,8 @@ print(text)</code></div>
         <span class="katex-display"><span class="katex"><span class="katex-mathml"><math><semantics><annotation encoding="application/x-tex">\\int_0^1 x\\,dx</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">junk</span></span></span>
         <hr>
         <p>A star * and a [bracket] and 5 * 3 should survive.</p>
-      </div>
     </div>
-  </article>
+  </div>
 </div>
 `;
 

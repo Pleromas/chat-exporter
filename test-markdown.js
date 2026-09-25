@@ -1,9 +1,9 @@
 const fs=require('fs'), path=require('path'), {JSDOM}=require('jsdom');
 const DIR=__dirname;
 const FIX=`
-<div data-message-author-role="user" data-message-id="u1"><div class="whitespace-pre-wrap">Recommendation for esoteric books.</div></div>
-<div data-message-author-role="assistant" data-message-id="a1" data-message-model-slug="gpt-5-5">
-  <div class="markdown">
+<div data-turn-key="t1"><h4 class="sr-only">You said:</h4><div data-user-message-bubble="true"><div class="whitespace-pre-wrap">Recommendation for esoteric books.</div></div></div>
+<div data-turn-key="t2"><h4 class="sr-only">ChatGPT said:</h4>
+  <div class="MarkdownRoot-rZKhxa">
     <p>I'll group them by tradition.</p>
     <h2>General introductions</h2>
     <p>The Secret Teachings of All Ages</p>
@@ -31,6 +31,6 @@ const t=[
  ['code fence headings untouched', md.includes('# not a heading, it is code') && md.includes('## also code')],
  ['rule before each speaker', (md.match(/\n---\n/g)||[]).length >= 2],
  ['sequence indicator present', md.includes('`1 of 2`') && md.includes('`2 of 2`')],
- ['model on assistant only', md.includes('`gpt-5-5`') && !/## You\n\n`1 of 2` \u2014/.test(md)],
+ ['model omitted when slug unavailable', md.includes('`2 of 2`') && !/`\d of \d` \u2014 `/.test(md)],
 ];
 let ok=true;for(const[n,p]of t){ok&&=p;console.log((p?'PASS  ':'FAIL  ')+n);}process.exit(ok?0:1);

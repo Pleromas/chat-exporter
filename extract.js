@@ -1,17 +1,33 @@
 /* Pulls the conversation out of the page DOM.
  * Every selector ChatGPT could change lives in SEL, so there is one place to fix.
+ *
+ * ChatGPT's DOM changed in 2026-09: the old `data-message-author-role` node is
+ * gone. A conversation is now a list of turns (`data-turn-key`), and inside a
+ * turn each message is anchored by one of two stable hooks:
+ *   - user:      an element with `data-user-message-bubble`, text in .whitespace-pre-wrap
+ *   - assistant: a CSS-module container whose class starts with "MarkdownRoot"
+ *                (the hash suffix changes per build; the prefix is the component name)
+ * The role is no longer an attribute on the content node — it is inferred from
+ * which hook matched. Model slug is no longer exposed anywhere, so it is null.
+ * The pre-2026-09 selectors are kept as a fallback.
  */
 (function () {
   const CE = (globalThis.CE = globalThis.CE || {});
 
   const SEL = {
-    message: '[data-message-author-role]',
-    turn: 'article[data-testid^="conversation-turn"]',
-    assistantBody: '.markdown',
-    userBody: '.whitespace-pre-wrap',
-    attrId: 'data-message-id',
-    attrRole: 'data-message-author-role',
-    attrModel: 'data-message-model-slug',
+    // Current DOM (2026-09+).
+    userMessage: '[data-user-message-bubble]',
+    assistantBody: '[class*="MarkdownRoot"]',
+    userText: '.whitespace-pre-wrap',
+    turn: '[data-turn-key]',
+    attrId: 'data-chatgpt-selection-message-id',
+
+    // Legacy DOM (pre-2026-09) fallback.
+    legacyMessage: '[data-message-author-role]',
+    legacyAssistantBody: '.markdown',
+    legacyRole: 'data-message-author-role',
+    legacyId: 'data-message-id',
+    legacyModel: 'data-message-model-slug',
 
     // Interface furniture that is not part of the message.
     noise: [
@@ -22,19 +38,50 @@
       '[data-testid*="citation"]',
       '[data-testid*="sources"]',
       '[data-testid*="carousel"]',
+      'img[class*="Favicon"]',
+      'span[class*="Favicon"]',
       'figure figcaption span:only-child'
     ].join(',')
   };
 
+  // Combined message hook: user bubbles and assistant markdown roots, in DOM order.
+  SEL.message = SEL.userMessage + ',' + SEL.assistantBody;
   CE.SEL = SEL;
 
+  const isLegacy = (node) => !!(node.hasAttribute && node.hasAttribute(SEL.legacyRole));
+
   function messageNodes() {
-    return Array.from(document.querySelectorAll(SEL.message));
+    const nodes = Array.from(document.querySelectorAll(SEL.message));
+    if (nodes.length) return nodes;
+    return Array.from(document.querySelectorAll(SEL.legacyMessage));
+  }
+
+  function roleOf(node) {
+    if (isLegacy(node)) return node.getAttribute(SEL.legacyRole) || 'unknown';
+    return node.matches(SEL.userMessage) ? 'user' : 'assistant';
+  }
+
+  // The element whose contents are the actual message body.
+  function bodyOf(node, role) {
+    if (isLegacy(node)) {
+      return node.querySelector(SEL.legacyAssistantBody) || node.querySelector(SEL.userText) || node;
+    }
+    if (role === 'user') return node.querySelector(SEL.userText) || node;
+    return node; // assistant: the MarkdownRoot node is itself the body
+  }
+
+  function idOf(node) {
+    return (
+      node.getAttribute(SEL.attrId) ||
+      node.getAttribute(SEL.legacyId) ||
+      (node.closest && node.closest(SEL.turn) && node.closest(SEL.turn).getAttribute('data-turn-key')) ||
+      null
+    );
   }
 
   // The thread lives in a scrollable ancestor, not on <body>.
   function scrollContainer() {
-    let node = document.querySelector(SEL.message);
+    let node = document.querySelector(SEL.message) || document.querySelector(SEL.legacyMessage);
     while (node && node !== document.body) {
       const style = getComputedStyle(node);
       if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 40) {
@@ -68,10 +115,6 @@
     box.scrollTop = restore || box.scrollHeight;
     return messageNodes().length;
   };
-
-  function bodyOf(node) {
-    return node.querySelector(SEL.assistantBody) || node.querySelector(SEL.userBody) || node;
-  }
 
   /* Work on a copy so the live page is never modified, and drop the buttons,
      gallery badges and citation chips that would otherwise land in the text. */
@@ -118,22 +161,22 @@
   CE.extract = function () {
     const messages = messageNodes()
       .map((node) => {
-        const role = node.getAttribute(SEL.attrRole) || 'unknown';
-        const body = bodyOf(node);
+        const role = roleOf(node);
+        const body = bodyOf(node, role);
 
-        // User turns are plain text in a pre-wrap div; keep their line breaks verbatim.
+        // User turns are plain text; keep their line breaks verbatim.
         let markdown;
-        if (body.classList.contains('whitespace-pre-wrap')) {
+        if (role === 'user') {
           const raw = typeof body.innerText === 'string' ? body.innerText : body.textContent;
-          markdown = (raw || '').replace(/\u00a0/g, ' ').trim();
+          markdown = (raw || '').replace(/ /g, ' ').trim();
         } else {
           markdown = stripStrayCounters(CE.htmlToMarkdown(cleanCopy(body)));
         }
 
         return {
-          id: node.getAttribute(SEL.attrId) || null,
+          id: idOf(node),
           role,
-          model: role === 'assistant' ? node.getAttribute(SEL.attrModel) || null : null,
+          model: role === 'assistant' ? node.getAttribute(SEL.legacyModel) || null : null,
           markdown
         };
       })

@@ -3,8 +3,9 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 
 const NASTY = `
-<div data-message-author-role="assistant" data-message-id="x">
-  <div class="markdown">
+<div data-turn-key="t1">
+  <h4 class="sr-only">ChatGPT said:</h4>
+  <div class="MarkdownRoot-rZKhxa" data-chatgpt-selection-message-id="x">
     <p>&lt;script&gt;alert('xss')&lt;/script&gt;</p>
     <p><a href="javascript:alert(1)">click me</a></p>
     <p>[fake](javascript:alert(2))</p>
