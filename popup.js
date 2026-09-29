@@ -16,6 +16,7 @@ const els = {
 };
 
 let tabId = null;
+let isAndroid = false;
 let opts = CE.normalizeOpts();
 
 function say(text, tone) {
@@ -76,6 +77,8 @@ els.plus.addEventListener('click', () => { opts.size = Math.min(CE.SIZE_MAX, opt
 els.loadAll.addEventListener('change', () => api.storage.local.set({ loadAll: els.loadAll.checked }));
 
 (async function init() {
+  try { isAndroid = (await api.runtime.getPlatformInfo()).os === 'android'; } catch { /* desktop */ }
+
   const saved = await api.storage.local.get(['opts', 'loadAll']);
   opts = CE.normalizeOpts(saved.opts);
   if (typeof saved.loadAll === 'boolean') els.loadAll.checked = saved.loadAll;
@@ -103,6 +106,21 @@ els.loadAll.addEventListener('change', () => api.storage.local.set({ loadAll: el
 
 els.buttons.forEach((button) => {
   button.addEventListener('click', async () => {
+    // On Android the popup is its own tab; keeping it open backgrounds the
+    // ChatGPT tab, which then can't scroll or render. Hand off and close so the
+    // content script runs in the foreground; it reports progress with a toast.
+    if (isAndroid) {
+      api.tabs.sendMessage(tabId, {
+        type: 'EXPORT',
+        format: button.dataset.format,
+        opts,
+        loadAll: els.loadAll.checked,
+        androidToast: true
+      }).catch(() => {});
+      setTimeout(() => window.close(), 30);
+      return;
+    }
+
     setEnabled(false);
     say(els.loadAll.checked ? 'Scrolling back through the thread\u2026' : 'Reading the thread\u2026');
 
@@ -129,6 +147,21 @@ els.buttons.forEach((button) => {
 });
 
 els.copy.addEventListener('click', async () => {
+  // Android: the content script must write the clipboard itself, because the
+  // popup closes so the ChatGPT tab can come to the foreground and scroll.
+  if (isAndroid) {
+    api.tabs.sendMessage(tabId, {
+      type: 'EXPORT',
+      format: 'markdown',
+      deliver: 'clipboard-self',
+      opts,
+      loadAll: els.loadAll.checked,
+      androidToast: true
+    }).catch(() => {});
+    setTimeout(() => window.close(), 30);
+    return;
+  }
+
   setEnabled(false);
   say(els.loadAll.checked ? 'Scrolling back through the thread\u2026' : 'Reading the thread\u2026');
 

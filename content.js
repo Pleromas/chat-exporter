@@ -3,6 +3,26 @@
   const CE = (globalThis.CE = globalThis.CE || {});
   const api = globalThis.browser || globalThis.chrome;
 
+  /* A transient status pill, shown on Android where the popup closes before the
+     export runs. Fixed overlay only — it never touches the conversation DOM. */
+  function toast(msg, tone) {
+    let el = document.getElementById('ce-export-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'ce-export-toast';
+      el.setAttribute('style',
+        'position:fixed;z-index:2147483647;left:50%;bottom:24px;transform:translateX(-50%);' +
+        'max-width:90vw;padding:12px 16px;border-radius:10px;pointer-events:none;' +
+        'font:500 14px/1.4 system-ui,-apple-system,sans-serif;color:#fff;' +
+        'box-shadow:0 6px 24px rgba(0,0,0,.35);');
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.background = tone === 'bad' ? '#7f1d1d' : tone === 'good' ? '#14532d' : '#1f2937';
+    clearTimeout(el._timer);
+    if (tone) el._timer = setTimeout(() => el.remove(), 4500);
+  }
+
   function slug(title) {
     return (title || 'chatgpt-conversation')
       .normalize('NFKD')
@@ -92,16 +112,32 @@
 
   async function run(request) {
     const opts = CE.normalizeOpts(request.opts);
+    // On Android the popup has closed, so progress/results are shown on the page.
+    const loud = !!request.androidToast;
+    if (loud) toast(request.loadAll !== false ? 'Reading the thread… scrolling back' : 'Reading the thread…');
 
     if (request.loadAll !== false) await CE.loadWholeThread();
 
     const data = CE.extract();
     if (!data.messages.length) {
+      if (loud) toast('No messages found. Open a conversation, then try again.', 'bad');
       return { ok: false, error: 'No messages found. Open a conversation, then try again.' };
     }
 
-    // Copy path: build the text and hand it back for the popup to put on the
-    // clipboard. Reliable on Android, where the downloads API is flaky.
+    // Clipboard, written here in the content script. Used on Android (popup gone).
+    if (request.deliver === 'clipboard-self') {
+      const fmt = FORMATS[request.format] || FORMATS.markdown;
+      try {
+        await navigator.clipboard.writeText(fmt.build(data, opts));
+        if (loud) toast(`Copied ${data.messages.length} messages to the clipboard`, 'good');
+        return { ok: true, count: data.messages.length };
+      } catch (e) {
+        if (loud) toast('Could not copy — try a download instead.', 'bad');
+        return { ok: false, error: String((e && e.message) || e) };
+      }
+    }
+
+    // Clipboard, handed back for the popup to write. Used on desktop (popup open).
     if (request.deliver === 'clipboard') {
       const fmt = FORMATS[request.format] || FORMATS.markdown;
       return { ok: true, count: data.messages.length, text: fmt.build(data, opts) };
@@ -116,6 +152,7 @@
         opts,
         body: CE.buildBody(data)
       });
+      if (loud) toast('Opening the print view…', 'good');
       return { ok: true, count: data.messages.length, note: 'Opened print view' };
     }
 
@@ -131,11 +168,13 @@
     });
 
     if (!res || !res.ok) {
+      if (loud) toast('Download failed.', 'bad');
       return { ok: false, error: (res && res.error) || 'Download failed.' };
     }
     const note = res.viaTab
       ? `Opened ${name} in a tab — save it from the browser menu`
       : `Saved ${name}`;
+    if (loud) toast(res.viaTab ? `Opened ${name} in a tab — save it from the menu` : `Saved ${name}`, 'good');
     return { ok: true, count: data.messages.length, note };
   }
 

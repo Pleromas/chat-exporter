@@ -94,9 +94,32 @@
 
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /* On Android the export is triggered from a popup that opens as its own tab,
+     so this tab is backgrounded — and a hidden tab neither renders virtualised
+     turns nor runs timers at full speed, which stalls the scroll. Wait until the
+     tab is actually visible (the popup has closed) before scrolling. */
+  function whenVisible() {
+    if (document.visibilityState === 'visible') return Promise.resolve();
+    return new Promise((resolve) => {
+      const handler = () => {
+        if (document.visibilityState === 'visible') {
+          document.removeEventListener('visibilitychange', handler);
+          clearTimeout(timer);
+          resolve();
+        }
+      };
+      const timer = setTimeout(() => {
+        document.removeEventListener('visibilitychange', handler);
+        resolve();
+      }, 8000);
+      document.addEventListener('visibilitychange', handler);
+    });
+  }
+
   /* Long chats are virtualised: older turns are not in the DOM until you
      scroll back to them. Scroll to the top until the count stops growing. */
   CE.loadWholeThread = async function (onProgress) {
+    await whenVisible();
     const box = scrollContainer();
     const restore = box.scrollTop;
     let previous = -1;
