@@ -13,6 +13,7 @@
       top: 0;
       z-index: 2;
       display: flex;
+      flex-wrap: wrap;
       gap: .6rem;
       align-items: center;
       background: var(--ink);
@@ -20,6 +21,14 @@
       padding: .55rem .9rem;
       margin: -3.5rem -1.5rem 2.5rem;
       font: 500 12.5px/1 ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+    }
+
+    /* Touch (Firefox for Android): bigger controls, and let the hint drop to its
+       own line instead of squeezing the buttons. */
+    @media (pointer: coarse) {
+      .bar { font-size: 14px; gap: .8rem; }
+      .bar button, .bar select, .bar .step button { padding: .8rem 1rem; min-height: 44px; }
+      .bar .hint { margin-left: 0; flex-basis: 100%; text-align: left; font-size: 12px; }
     }
     .bar button {
       font: inherit;

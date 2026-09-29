@@ -115,14 +115,21 @@
     const spec = FORMATS[request.format];
     if (!spec) return { ok: false, error: `Unknown format: ${request.format}` };
 
-    await api.runtime.sendMessage({
+    const name = `${base}.${spec.ext}`;
+    const res = await api.runtime.sendMessage({
       type: 'DOWNLOAD',
-      filename: `${base}.${spec.ext}`,
+      filename: name,
       mime: spec.mime,
       text: spec.build(data, opts)
     });
 
-    return { ok: true, count: data.messages.length, note: `Saved ${base}.${spec.ext}` };
+    if (!res || !res.ok) {
+      return { ok: false, error: (res && res.error) || 'Download failed.' };
+    }
+    const note = res.viaTab
+      ? `Opened ${name} in a tab — save it from the browser menu`
+      : `Saved ${name}`;
+    return { ok: true, count: data.messages.length, note };
   }
 
   api.runtime.onMessage.addListener((msg) => {

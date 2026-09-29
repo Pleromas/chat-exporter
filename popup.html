@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Export this chat</title>
   <style>
@@ -34,11 +35,29 @@
 
     body {
       width: 300px;
+      max-width: 100vw;
       margin: 0;
       padding: 14px;
       background: var(--paper);
       color: var(--ink);
       font: 400 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    /* On Firefox for Android the popup opens as a full page. Fill the width and
+       enlarge tap targets; a coarse pointer is the reliable "this is a phone" cue. */
+    @media (pointer: coarse) {
+      body { width: auto; max-width: 640px; margin: 0 auto; padding: 18px; font-size: 15px; }
+      .count b { font-size: 32px; }
+      #title { font-size: 15px; }
+      button.fmt { padding: 16px; font-size: 16px; }
+      button.fmt small { font-size: 12px; }
+      .grid { gap: 10px; }
+      .seg button { padding: 14px 0; font-size: 14px; min-height: 48px; }
+      select#font { padding: 14px 10px; font-size: 15px; min-height: 48px; }
+      .step { grid-template-columns: 48px 46px 48px; }
+      .step button { font-size: 20px; }
+      label.opt { font-size: 14px; padding: 6px 0; }
+      #status { font-size: 13px; }
     }
 
     .eyebrow {
