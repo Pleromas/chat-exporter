@@ -11,6 +11,7 @@ const els = {
   size: document.getElementById('size'),
   minus: document.getElementById('minus'),
   plus: document.getElementById('plus'),
+  copy: document.getElementById('copy'),
   buttons: Array.from(document.querySelectorAll('button.fmt'))
 };
 
@@ -24,6 +25,24 @@ function say(text, tone) {
 
 function setEnabled(on) {
   els.buttons.forEach((b) => { b.disabled = !on; });
+  els.copy.disabled = !on;
+}
+
+async function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  // Fallback for engines without the async clipboard API.
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
 }
 
 function paint(save) {
@@ -107,4 +126,31 @@ els.buttons.forEach((button) => {
       setEnabled(true);
     }
   });
+});
+
+els.copy.addEventListener('click', async () => {
+  setEnabled(false);
+  say(els.loadAll.checked ? 'Scrolling back through the thread\u2026' : 'Reading the thread\u2026');
+
+  try {
+    const result = await api.tabs.sendMessage(tabId, {
+      type: 'EXPORT',
+      format: 'markdown',
+      deliver: 'clipboard',
+      opts,
+      loadAll: els.loadAll.checked
+    });
+
+    if (result && result.ok && typeof result.text === 'string') {
+      await copyText(result.text);
+      els.loaded.textContent = String(result.count);
+      say(`Copied ${result.count} messages to the clipboard`, 'good');
+    } else {
+      say((result && result.error) || 'Copy failed.', 'bad');
+    }
+  } catch (err) {
+    say(String(err && err.message ? err.message : err), 'bad');
+  } finally {
+    setEnabled(true);
+  }
 });

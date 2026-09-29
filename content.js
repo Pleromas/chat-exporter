@@ -100,6 +100,13 @@
       return { ok: false, error: 'No messages found. Open a conversation, then try again.' };
     }
 
+    // Copy path: build the text and hand it back for the popup to put on the
+    // clipboard. Reliable on Android, where the downloads API is flaky.
+    if (request.deliver === 'clipboard') {
+      const fmt = FORMATS[request.format] || FORMATS.markdown;
+      return { ok: true, count: data.messages.length, text: fmt.build(data, opts) };
+    }
+
     const base = `${slug(data.title)}-${stamp(data.exportedAt)}`;
 
     if (request.format === 'pdf') {

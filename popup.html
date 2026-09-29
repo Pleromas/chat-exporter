@@ -51,6 +51,7 @@
       #title { font-size: 15px; }
       button.fmt { padding: 16px; font-size: 16px; }
       button.fmt small { font-size: 12px; }
+      button.copy { padding: 16px; font-size: 16px; margin-top: 10px; }
       .grid { gap: 10px; }
       .seg button { padding: 14px 0; font-size: 14px; min-height: 48px; }
       select#font { padding: 14px 10px; font-size: 15px; min-height: 48px; }
@@ -110,6 +111,20 @@
     button.fmt:hover:not([disabled]) { border-color: var(--pine); }
     button.fmt:focus-visible { outline: 2px solid var(--pine); outline-offset: 1px; }
     button[disabled] { opacity: .45; cursor: default; }
+
+    button.copy {
+      width: 100%;
+      margin-top: 6px;
+      font: 500 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--card);
+      border: 1px solid var(--rule);
+      border-radius: 5px;
+      padding: 10px 11px;
+      cursor: pointer;
+    }
+    button.copy:hover:not([disabled]) { border-color: var(--pine); }
+    button.copy:focus-visible { outline: 2px solid var(--pine); outline-offset: 1px; }
 
     .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
     .seg button {
@@ -206,6 +221,7 @@
       <button class="fmt" data-format="html" disabled>HTML<small>.html</small></button>
       <button class="fmt" data-format="json" disabled>JSON<small>.json</small></button>
     </div>
+    <button class="copy" id="copy" data-format="markdown" disabled>Copy Markdown to clipboard</button>
   </div>
 
   <div class="field">

@@ -17,7 +17,7 @@
     }
   },
 
-  "permissions": ["downloads", "storage"],
+  "permissions": ["downloads", "storage", "clipboardWrite"],
 
   "host_permissions": [
     "https://chatgpt.com/*",
