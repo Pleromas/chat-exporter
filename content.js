@@ -23,6 +23,22 @@
     if (tone) el._timer = setTimeout(() => el.remove(), 4500);
   }
 
+  /* Save a file from the page context. Firefox for Android refuses to download a
+     blob made in the background page (blob:moz-extension: -> "access denied"),
+     but a page-origin blob (blob:https://chatgpt.com/...) saved through a plain
+     <a download> works. Used on Android instead of the downloads API. */
+  function downloadViaAnchor(filename, mime, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: mime }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 60000);
+  }
+
   function slug(title) {
     return (title || 'chatgpt-conversation')
       .normalize('NFKD')
@@ -160,21 +176,28 @@
     if (!spec) return { ok: false, error: `Unknown format: ${request.format}` };
 
     const name = `${base}.${spec.ext}`;
+    const text = spec.build(data, opts);
+
+    if (loud) {
+      // Android: save from here (page origin), not via the background downloads API.
+      downloadViaAnchor(name, spec.mime, text);
+      toast(`Saving ${name}`, 'good');
+      return { ok: true, count: data.messages.length, note: `Saving ${name}` };
+    }
+
     const res = await api.runtime.sendMessage({
       type: 'DOWNLOAD',
       filename: name,
       mime: spec.mime,
-      text: spec.build(data, opts)
+      text
     });
 
     if (!res || !res.ok) {
-      if (loud) toast('Download failed.', 'bad');
       return { ok: false, error: (res && res.error) || 'Download failed.' };
     }
     const note = res.viaTab
       ? `Opened ${name} in a tab — save it from the browser menu`
       : `Saved ${name}`;
-    if (loud) toast(res.viaTab ? `Opened ${name} in a tab — save it from the menu` : `Saved ${name}`, 'good');
     return { ok: true, count: data.messages.length, note };
   }
 

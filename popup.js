@@ -77,7 +77,12 @@ els.plus.addEventListener('click', () => { opts.size = Math.min(CE.SIZE_MAX, opt
 els.loadAll.addEventListener('change', () => api.storage.local.set({ loadAll: els.loadAll.checked }));
 
 (async function init() {
-  try { isAndroid = (await api.runtime.getPlatformInfo()).os === 'android'; } catch { /* desktop */ }
+  // userAgent is the reliable signal in the popup; getPlatformInfo has been seen
+  // to not report android here, so fall back to it only if the UA is inconclusive.
+  isAndroid = /Android/i.test(navigator.userAgent);
+  if (!isAndroid) {
+    try { isAndroid = (await api.runtime.getPlatformInfo()).os === 'android'; } catch { /* desktop */ }
+  }
 
   const saved = await api.storage.local.get(['opts', 'loadAll']);
   opts = CE.normalizeOpts(saved.opts);
@@ -117,7 +122,9 @@ els.buttons.forEach((button) => {
         loadAll: els.loadAll.checked,
         androidToast: true
       }).catch(() => {});
-      setTimeout(() => window.close(), 30);
+      // Bring the ChatGPT tab to the front; this dismisses the popup and lets the
+      // page render + scroll. More reliable than window.close() on Android.
+      api.tabs.update(tabId, { active: true });
       return;
     }
 
@@ -158,7 +165,7 @@ els.copy.addEventListener('click', async () => {
       loadAll: els.loadAll.checked,
       androidToast: true
     }).catch(() => {});
-    setTimeout(() => window.close(), 30);
+    api.tabs.update(tabId, { active: true });
     return;
   }
 
