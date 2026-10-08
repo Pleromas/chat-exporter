@@ -18,8 +18,16 @@ const els = {
 let tabId = null;
 // Detect Android from the popup's own userAgent (reliable here) and tag the root
 // so the mobile layout applies only on Android — never on touch-capable desktops.
+// The viewport meta is added only here, not in the HTML: on a desktop popup
+// `width=device-width` collapses the panel to a sliver, so it must be Android-only.
 let isAndroid = /Android/i.test(navigator.userAgent);
-if (isAndroid) document.documentElement.classList.add('android');
+if (isAndroid) {
+  document.documentElement.classList.add('android');
+  const vp = document.createElement('meta');
+  vp.name = 'viewport';
+  vp.content = 'width=device-width, initial-scale=1';
+  document.head.appendChild(vp);
+}
 let opts = CE.normalizeOpts();
 
 function say(text, tone) {
