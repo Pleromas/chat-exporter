@@ -136,9 +136,11 @@ els.buttons.forEach((button) => {
         loadAll: els.loadAll.checked,
         androidToast: true
       }).catch(() => {});
-      // Bring the ChatGPT tab to the front; this dismisses the popup and lets the
-      // page render + scroll. More reliable than window.close() on Android.
-      api.tabs.update(tabId, { active: true });
+      // Foreground the ChatGPT tab AND close the popup, so the page is visible and
+      // can scroll. tabs.update alone did not dismiss the popup on Android, which
+      // left the tab backgrounded and the export waiting on visibility.
+      api.tabs.update(tabId, { active: true }).catch(() => {});
+      window.close();
       return;
     }
 
@@ -179,7 +181,8 @@ els.copy.addEventListener('click', async () => {
       loadAll: els.loadAll.checked,
       androidToast: true
     }).catch(() => {});
-    api.tabs.update(tabId, { active: true });
+    api.tabs.update(tabId, { active: true }).catch(() => {});
+    window.close();
     return;
   }
 

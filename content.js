@@ -162,36 +162,26 @@
     const name = `${base}.${spec.ext}`;
     const text = spec.build(data, opts);
 
-    if (loud) {
-      // Android: make the blob here in the page context (blob:https://chatgpt.com/…).
-      // The background page downloads it — a page-origin blob avoids the
-      // blob:moz-extension "access denied" that blocks downloads on Firefox for
-      // Android. If the download is still refused, the background opens it in a
-      // tab (HTML renders; text is viewable to save or share).
-      const url = URL.createObjectURL(new Blob([text], { type: spec.mime }));
-      const res = await api.runtime.sendMessage({ type: 'DOWNLOAD_URL', url, filename: name });
-      setTimeout(() => URL.revokeObjectURL(url), 120000);
-      if (res && res.ok) {
-        toast(res.viaTab ? `Opened ${name} — save it from the browser menu` : `Saved ${name}`, 'good');
-        return { ok: true, count: data.messages.length };
-      }
-      toast('Could not save the file. Try Copy instead.', 'bad');
-      return { ok: false, error: (res && res.error) || 'Save failed.' };
-    }
-
+    // The background chooses how to save: a Save As blob download on desktop, a
+    // data: URL download on Android (blobs can't be saved there), with a tab
+    // fallback. `android` is passed explicitly because getPlatformInfo has been
+    // unreliable, and the popup already knows the platform.
     const res = await api.runtime.sendMessage({
       type: 'DOWNLOAD',
       filename: name,
       mime: spec.mime,
-      text
+      text,
+      android: loud
     });
 
     if (!res || !res.ok) {
+      if (loud) toast('Could not save the file. Try Copy instead.', 'bad');
       return { ok: false, error: (res && res.error) || 'Download failed.' };
     }
     const note = res.viaTab
       ? `Opened ${name} in a tab — save it from the browser menu`
       : `Saved ${name}`;
+    if (loud) toast(res.viaTab ? `Opened ${name} in a tab — save it from the menu` : `Saved ${name}`, 'good');
     return { ok: true, count: data.messages.length, note };
   }
 
@@ -205,7 +195,7 @@
     if (!msg || msg.type !== 'PING') return;
     return Promise.resolve({
       ok: true,
-      loaded: document.querySelectorAll(CE.SEL.message).length,
+      loaded: CE.messageCount(),
       title: CE.conversationTitle()
     });
   });

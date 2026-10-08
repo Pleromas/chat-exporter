@@ -2,37 +2,36 @@
    print view are both created here, in the extension's own context. */
 const api = globalThis.browser || globalThis.chrome;
 
-let osPromise;
-function platformOs() {
-  if (!osPromise) {
-    osPromise = Promise.resolve()
-      .then(() => api.runtime.getPlatformInfo())
-      .then((info) => info.os)
-      .catch(() => 'unknown');
-  }
-  return osPromise;
-}
-
-async function saveFile({ filename, mime, text }) {
-  const os = await platformOs();
-  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+async function saveOnAndroid({ filename, mime, text }) {
+  // Firefox for Android cannot save a blob: URL via the downloads API (scoped
+  // storage / "access denied"). A data: URL download works and needs no picker.
+  const url = `data:${mime};charset=utf-8,` + encodeURIComponent(text);
   try {
-    // `saveAs` shows a file picker, which only exists on desktop. Firefox for
-    // Android has no picker and rejects the option, so only ask for it off-Android.
-    const id = await api.downloads.download({ url, filename, saveAs: os !== 'android' });
+    const id = await api.downloads.download({ url, filename });
     return { ok: true, id };
   } catch (e) {
-    // Fallback (seen on Android, where the downloads API can refuse a blob): hand
-    // the file to a new tab so the browser's own save/share UI can take it.
+    // Last resort: open it in a tab so the user can save or share from the menu.
     try {
       await api.tabs.create({ url });
       return { ok: true, viaTab: true };
     } catch (e2) {
       return { ok: false, error: String((e && e.message) || e) };
     }
+  }
+}
+
+async function saveOnDesktop({ filename, mime, text }) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  try {
+    const id = await api.downloads.download({ url, filename, saveAs: true });
+    return { ok: true, id };
   } finally {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
+}
+
+function saveFile(msg) {
+  return msg.android ? saveOnAndroid(msg) : saveOnDesktop(msg);
 }
 
 async function openPrintView({ title, body }) {
@@ -44,27 +43,9 @@ async function openPrintView({ title, body }) {
   return { ok: true };
 }
 
-// Android path: the content script already made a page-origin blob URL. Download
-// it (no saveAs — Android has no picker); if the downloads API still refuses,
-// open it in a tab so the user can save or share it from the browser menu.
-async function saveFromUrl({ url, filename }) {
-  try {
-    const id = await api.downloads.download({ url, filename });
-    return { ok: true, id };
-  } catch (e) {
-    try {
-      await api.tabs.create({ url });
-      return { ok: true, viaTab: true };
-    } catch (e2) {
-      return { ok: false, error: String((e && e.message) || e) };
-    }
-  }
-}
-
 api.runtime.onMessage.addListener((msg) => {
   if (!msg) return;
   if (msg.type === 'DOWNLOAD') return saveFile(msg);
-  if (msg.type === 'DOWNLOAD_URL') return saveFromUrl(msg);
   if (msg.type === 'PRINT') return openPrintView(msg);
 });
 
