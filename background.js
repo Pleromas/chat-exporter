@@ -44,9 +44,27 @@ async function openPrintView({ title, body }) {
   return { ok: true };
 }
 
+// Android path: the content script already made a page-origin blob URL. Download
+// it (no saveAs — Android has no picker); if the downloads API still refuses,
+// open it in a tab so the user can save or share it from the browser menu.
+async function saveFromUrl({ url, filename }) {
+  try {
+    const id = await api.downloads.download({ url, filename });
+    return { ok: true, id };
+  } catch (e) {
+    try {
+      await api.tabs.create({ url });
+      return { ok: true, viaTab: true };
+    } catch (e2) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  }
+}
+
 api.runtime.onMessage.addListener((msg) => {
   if (!msg) return;
   if (msg.type === 'DOWNLOAD') return saveFile(msg);
+  if (msg.type === 'DOWNLOAD_URL') return saveFromUrl(msg);
   if (msg.type === 'PRINT') return openPrintView(msg);
 });
 

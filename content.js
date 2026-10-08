@@ -23,22 +23,6 @@
     if (tone) el._timer = setTimeout(() => el.remove(), 4500);
   }
 
-  /* Save a file from the page context. Firefox for Android refuses to download a
-     blob made in the background page (blob:moz-extension: -> "access denied"),
-     but a page-origin blob (blob:https://chatgpt.com/...) saved through a plain
-     <a download> works. Used on Android instead of the downloads API. */
-  function downloadViaAnchor(filename, mime, text) {
-    const url = URL.createObjectURL(new Blob([text], { type: mime }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.rel = 'noopener';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 60000);
-  }
-
   function slug(title) {
     return (title || 'chatgpt-conversation')
       .normalize('NFKD')
@@ -179,10 +163,20 @@
     const text = spec.build(data, opts);
 
     if (loud) {
-      // Android: save from here (page origin), not via the background downloads API.
-      downloadViaAnchor(name, spec.mime, text);
-      toast(`Saving ${name}`, 'good');
-      return { ok: true, count: data.messages.length, note: `Saving ${name}` };
+      // Android: make the blob here in the page context (blob:https://chatgpt.com/…).
+      // The background page downloads it — a page-origin blob avoids the
+      // blob:moz-extension "access denied" that blocks downloads on Firefox for
+      // Android. If the download is still refused, the background opens it in a
+      // tab (HTML renders; text is viewable to save or share).
+      const url = URL.createObjectURL(new Blob([text], { type: spec.mime }));
+      const res = await api.runtime.sendMessage({ type: 'DOWNLOAD_URL', url, filename: name });
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+      if (res && res.ok) {
+        toast(res.viaTab ? `Opened ${name} — save it from the browser menu` : `Saved ${name}`, 'good');
+        return { ok: true, count: data.messages.length };
+      }
+      toast('Could not save the file. Try Copy instead.', 'bad');
+      return { ok: false, error: (res && res.error) || 'Save failed.' };
     }
 
     const res = await api.runtime.sendMessage({

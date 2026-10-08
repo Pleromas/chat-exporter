@@ -16,7 +16,10 @@ const els = {
 };
 
 let tabId = null;
-let isAndroid = false;
+// Detect Android from the popup's own userAgent (reliable here) and tag the root
+// so the mobile layout applies only on Android — never on touch-capable desktops.
+let isAndroid = /Android/i.test(navigator.userAgent);
+if (isAndroid) document.documentElement.classList.add('android');
 let opts = CE.normalizeOpts();
 
 function say(text, tone) {
@@ -77,11 +80,14 @@ els.plus.addEventListener('click', () => { opts.size = Math.min(CE.SIZE_MAX, opt
 els.loadAll.addEventListener('change', () => api.storage.local.set({ loadAll: els.loadAll.checked }));
 
 (async function init() {
-  // userAgent is the reliable signal in the popup; getPlatformInfo has been seen
-  // to not report android here, so fall back to it only if the UA is inconclusive.
-  isAndroid = /Android/i.test(navigator.userAgent);
+  // UA set isAndroid above; fall back to getPlatformInfo only if the UA missed it.
   if (!isAndroid) {
-    try { isAndroid = (await api.runtime.getPlatformInfo()).os === 'android'; } catch { /* desktop */ }
+    try {
+      if ((await api.runtime.getPlatformInfo()).os === 'android') {
+        isAndroid = true;
+        document.documentElement.classList.add('android');
+      }
+    } catch { /* desktop */ }
   }
 
   const saved = await api.storage.local.get(['opts', 'loadAll']);
