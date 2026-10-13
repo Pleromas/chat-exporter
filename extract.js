@@ -159,42 +159,59 @@
     });
   }
 
-  // The thread lives in a scrollable ancestor, not on <body>.
+  // The thread lives in a scrollable ancestor, not on <body>. Pick the ancestor of
+  // a message that actually scrolls and has the most content; fall back to the page.
   function scrollContainer() {
-    const first = messageBlocks()[0];
+    const first = rawBlocks()[0];
     let node = (first && first.node) || document.querySelector(SEL.message);
-    while (node && node !== document.body) {
-      const style = getComputedStyle(node);
-      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 40) {
-        return node;
-      }
+    let best = null;
+    while (node && node !== document.body && node.parentElement) {
+      try {
+        const style = getComputedStyle(node);
+        if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 40) {
+          if (!best || node.scrollHeight > best.scrollHeight) best = node;
+        }
+      } catch (e) { /* detached */ }
       node = node.parentElement;
     }
-    return document.scrollingElement || document.documentElement;
+    return best || document.scrollingElement || document.documentElement;
   }
 
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const pageScroller = () => document.scrollingElement || document.documentElement;
 
-  /* Long chats are virtualised: older turns are not in the DOM until you
-     scroll back to them. Scroll to the top until the count stops growing. */
+  /* Long chats are virtualised: older turns are not in the DOM until you scroll
+     back to them, and a single jump to the top often does not re-trigger loading.
+     Scroll UP a chunk at a time — on both the thread container and the window, since
+     either may be the real scroller — and stop only once the top is reached and the
+     message count has stopped growing for several passes. */
   CE.loadWholeThread = async function (onProgress) {
     await whenVisible();
     const box = scrollContainer();
-    const restore = box.scrollTop;
     let previous = -1;
     let settled = 0;
 
-    for (let pass = 0; pass < 250 && settled < 3; pass++) {
+    for (let pass = 0; pass < 400 && settled < 4; pass++) {
       const count = CE.messageCount();
-      if (count === previous) settled++;
-      else { settled = 0; previous = count; }
-
       if (onProgress) onProgress(count);
-      box.scrollTop = 0;
-      await wait(300);
+
+      const boxTop = box ? box.scrollTop : 0;
+      const winTop = pageScroller().scrollTop;
+      const atTop = boxTop <= 1 && winTop <= 1;
+
+      if (count === previous && atTop) settled++;
+      else settled = 0;
+      previous = count;
+
+      const step = Math.max(600, Math.round((box && box.clientHeight ? box.clientHeight : window.innerHeight) * 0.9));
+      try { if (box) box.scrollTop = Math.max(0, boxTop - step); } catch (e) { /* */ }
+      try { window.scrollBy(0, -step); } catch (e) { /* */ }
+
+      await wait(350);
     }
 
-    box.scrollTop = restore || box.scrollHeight;
+    // Leave the view at the latest message.
+    try { if (box) box.scrollTop = box.scrollHeight; } catch (e) { /* */ }
     return CE.messageCount();
   };
 
