@@ -81,12 +81,51 @@
     }));
   }
 
-  function messageBlocks() {
+  function rawBlocks() {
     let b = labelBlocks();
     if (b.length) return b;
     b = anchorBlocks();
     if (b.length) return b;
     return legacyBlocks();
+  }
+
+  // The current conversation id, from /c/<id> in the URL.
+  function conversationId() {
+    const m = /\/c\/([^/?#]+)/.exec(location.pathname || '');
+    return m ? m[1] : null;
+  }
+
+  const CONV_ATTR = 'data-chatgpt-selection-conversation-id';
+
+  // The conversation a message block belongs to: ChatGPT tags turns with the
+  // conversation id. Look on the block, inside it, and across its enclosing turn.
+  function blockConversationId(node) {
+    const el =
+      (node.closest && node.closest('[' + CONV_ATTR + ']')) ||
+      (node.querySelector && node.querySelector('[' + CONV_ATTR + ']')) ||
+      (node.closest &&
+        node.closest(SEL.turn) &&
+        node.closest(SEL.turn).querySelector('[' + CONV_ATTR + ']'));
+    return el ? el.getAttribute(CONV_ATTR) : null;
+  }
+
+  /* ChatGPT is a single-page app and leaves a previously-viewed conversation's
+     turns in the DOM, so a whole-document scan mixes two conversations. Keep only
+     the blocks that belong to the conversation in the URL. Blocks with no id tag
+     are kept (don't over-filter), and if scoping would drop everything the raw
+     set is returned unchanged. */
+  function scopeToConversation(blocks) {
+    const id = conversationId();
+    if (!id || !document.querySelector('[' + CONV_ATTR + ']')) return blocks;
+    const scoped = blocks.filter((b) => {
+      const c = blockConversationId(b.node);
+      return c === null || c === id;
+    });
+    return scoped.length ? scoped : blocks;
+  }
+
+  function messageBlocks() {
+    return scopeToConversation(rawBlocks());
   }
 
   CE.messageCount = () => messageBlocks().length;
