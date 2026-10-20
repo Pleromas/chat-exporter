@@ -180,39 +180,111 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const pageScroller = () => document.scrollingElement || document.documentElement;
 
-  /* Long chats are virtualised: older turns are not in the DOM until you scroll
-     back to them, and a single jump to the top often does not re-trigger loading.
-     Scroll UP a chunk at a time — on both the thread container and the window, since
-     either may be the real scroller — and stop only once the top is reached and the
-     message count has stopped growing for several passes. */
-  CE.loadWholeThread = async function (onProgress) {
+  function hashStr(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
+  // A stable id for a message, the same across scroll snapshots, so the same turn
+  // is never counted twice and never lost. Prefer ChatGPT's own ids; role is part
+  // of the key so a turn that carries both a user and assistant message splits.
+  function idForMerge(block) {
+    const n = block.node;
+    const own = n.querySelector && n.querySelector('[data-chatgpt-selection-message-id]');
+    if (own) return 'm:' + own.getAttribute('data-chatgpt-selection-message-id') + ':' + block.role;
+    const turn = n.closest && n.closest(SEL.turn);
+    if (turn && turn.getAttribute('data-turn-key')) return 't:' + turn.getAttribute('data-turn-key') + ':' + block.role;
+    return 'h:' + block.role + ':' + hashStr(markdownOf(block));
+  }
+
+  /* Export the whole conversation, robust to ChatGPT's virtualisation.
+     Turns far from the viewport are dropped from the DOM in BOTH directions, so a
+     single extract at the top loses the latest messages and a single extract at the
+     bottom loses the oldest. Instead: start at the bottom (capture the latest before
+     they can be dropped), scroll UP a chunk at a time capturing each window, then
+     return to the bottom and capture again. Each window is merged by stable id into
+     one ordered list, so nothing is counted twice or lost. Either the thread
+     container or the window may be the real scroller, so both are scrolled. */
+  CE.extractAll = async function (onProgress) {
     await whenVisible();
     const box = scrollContainer();
+    const content = new Map();
+    let order = [];
+    const seen = new Set();
+
+    function merge(win) {
+      if (!win.length) return;
+      if (!order.length) { order = win.slice(); win.forEach((id) => seen.add(id)); return; }
+      const firstSeen = win.findIndex((id) => seen.has(id));
+      if (firstSeen === -1) {
+        const news = win.filter((id) => !seen.has(id));
+        order = news.concat(order); // no overlap while scrolling up => older, goes on top
+        news.forEach((id) => seen.add(id));
+        return;
+      }
+      const older = win.slice(0, firstSeen).filter((id) => !seen.has(id));
+      if (older.length) {
+        const pos = order.indexOf(win[firstSeen]);
+        order = order.slice(0, pos).concat(older, order.slice(pos));
+        older.forEach((id) => seen.add(id));
+      }
+      const tail = win.slice(firstSeen + 1).filter((id) => !seen.has(id));
+      if (tail.length) { order = order.concat(tail); tail.forEach((id) => seen.add(id)); }
+    }
+
+    function capture() {
+      const win = [];
+      for (const b of messageBlocks()) {
+        if (b.role === 'system' || b.role === 'tool') continue;
+        const md = markdownOf(b);
+        if (!md) continue;
+        const id = idForMerge(b);
+        win.push(id);
+        const ex = content.get(id);
+        if (!ex || md.length > ex.markdown.length) content.set(id, { role: b.role, markdown: md });
+      }
+      merge(win);
+      if (onProgress) onProgress(order.length);
+    }
+
+    const toBottom = () => {
+      try { if (box) box.scrollTop = box.scrollHeight; } catch (e) { /* */ }
+      try { window.scrollTo(0, pageScroller().scrollHeight); } catch (e) { /* */ }
+    };
+
+    // 1. Bottom first — the latest turns, before virtualisation can drop them.
+    toBottom();
+    await wait(250);
+    capture();
+
+    // 2. Scroll up, capturing each window, until the top is reached and stable.
     let previous = -1;
     let settled = 0;
-
     for (let pass = 0; pass < 400 && settled < 4; pass++) {
-      const count = CE.messageCount();
-      if (onProgress) onProgress(count);
-
       const boxTop = box ? box.scrollTop : 0;
       const winTop = pageScroller().scrollTop;
       const atTop = boxTop <= 1 && winTop <= 1;
-
-      if (count === previous && atTop) settled++;
+      if (order.length === previous && atTop) settled++;
       else settled = 0;
-      previous = count;
+      previous = order.length;
 
-      const step = Math.max(600, Math.round((box && box.clientHeight ? box.clientHeight : window.innerHeight) * 0.9));
+      const step = Math.max(500, Math.round((box && box.clientHeight ? box.clientHeight : window.innerHeight) * 0.7));
       try { if (box) box.scrollTop = Math.max(0, boxTop - step); } catch (e) { /* */ }
       try { window.scrollBy(0, -step); } catch (e) { /* */ }
-
       await wait(350);
+      capture();
     }
 
-    // Leave the view at the latest message.
-    try { if (box) box.scrollTop = box.scrollHeight; } catch (e) { /* */ }
-    return CE.messageCount();
+    // 3. Back to the bottom and capture again, so the latest are present and current.
+    toBottom();
+    await wait(400);
+    capture();
+
+    return order
+      .map((id) => content.get(id))
+      .filter(Boolean)
+      .map((m) => ({ id: null, role: m.role, model: null, markdown: m.markdown }));
   };
 
   /* Work on a copy so the live page is never modified, and drop the buttons,

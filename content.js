@@ -116,9 +116,21 @@
     const loud = !!request.androidToast;
     if (loud) toast(request.loadAll !== false ? 'Reading the thread… scrolling back' : 'Reading the thread…');
 
-    if (request.loadAll !== false) await CE.loadWholeThread();
+    let data;
+    if (request.loadAll !== false) {
+      // Scroll the whole thread and accumulate — captures the latest turns before
+      // virtualisation drops them and the oldest once scrolling loads them.
+      const messages = await CE.extractAll();
+      data = {
+        title: CE.conversationTitle(),
+        url: location.href,
+        exportedAt: new Date().toISOString(),
+        messages
+      };
+    } else {
+      data = CE.extract();
+    }
 
-    const data = CE.extract();
     if (!data.messages.length) {
       if (loud) toast('No messages found. Open a conversation, then try again.', 'bad');
       return { ok: false, error: 'No messages found. Open a conversation, then try again.' };
