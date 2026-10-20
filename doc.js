@@ -224,6 +224,14 @@ header.doc .src a { color: inherit; text-decoration: none; }
   white-space: pre;
 }
 
+/* Maths. MathML renders natively in Firefox (screen and print); these rules only
+   space and size it. .math code is the fallback when no MathML was captured. */
+.body .math-display { margin: 0 0 1.05rem; overflow-x: auto; }
+.body math { font-size: 1.05em; }
+.body math[display="block"], .body .math-display math { display: block; margin: 0 auto; }
+.body pre.math { text-align: center; }
+.body pre.math code, .body code.math { white-space: pre-wrap; }
+
 .body table { border-collapse: collapse; width: 100%; margin: 0 0 1.05rem; font-size: .92em; }
 .body th, .body td {
   border: 1px solid var(--rule);

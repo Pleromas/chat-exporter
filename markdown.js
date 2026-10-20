@@ -94,13 +94,83 @@
     );
   }
 
+  /* ChatGPT renders math with KaTeX, which leaves the TeX source in an
+     <annotation> and — crucially — a presentation-MathML copy in .katex-mathml.
+     Markdown keeps the TeX ($…$ / $$…$$), which every maths-aware viewer renders.
+     For HTML/PDF we also stash the MathML, keyed by the TeX, so the document
+     builder can emit it: Firefox renders MathML natively, so equations render in
+     the HTML file and in the printed PDF with no library and no network. */
+  CE._mathCapture = CE._mathCapture || new Map();
+
+  // TeX can arrive HTML-escaped on the markdown->HTML side; normalise both ends.
+  function mathKey(tex) {
+    return String(tex)
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  CE._mathKey = mathKey;
+
+  // Presentation MathML is a small, closed vocabulary with no scripting. Rebuild
+  // it from a whitelist so nothing but known elements/attributes survives, and so
+  // every text run is escaped — same string-building discipline as the rest of the
+  // HTML path. The <annotation> (raw TeX) is dropped; the visual MathML is enough.
+  const MATHML_TAGS = new Set([
+    'math', 'semantics', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext', 'mspace',
+    'msup', 'msub', 'msubsup', 'mfrac', 'msqrt', 'mroot', 'mover', 'munder',
+    'munderover', 'mtable', 'mtr', 'mtd', 'mlabeledtr', 'mpadded', 'mphantom',
+    'menclose', 'mstyle', 'mmultiscripts', 'mprescripts', 'none', 'merror'
+  ]);
+  const MATHML_ATTRS = new Set([
+    'mathvariant', 'display', 'stretchy', 'fence', 'separator', 'accent',
+    'accentunder', 'columnalign', 'rowalign', 'rowspacing', 'columnspacing',
+    'open', 'close', 'displaystyle', 'scriptlevel', 'linethickness', 'width',
+    'height', 'depth', 'mathsize', 'lspace', 'rspace', 'notation', 'dir',
+    'form', 'minsize', 'maxsize', 'rowspan', 'columnspan', 'xmlns'
+  ]);
+
+  function serializeMathML(node) {
+    if (node.nodeType === Node.TEXT_NODE) return escHtml(node.nodeValue || '');
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const name = (node.localName || node.tagName || '').toLowerCase();
+    if (name === 'annotation' || name === 'annotation-xml') return '';
+    const inner = Array.from(node.childNodes).map(serializeMathML).join('');
+    if (!MATHML_TAGS.has(name)) return inner; // unknown wrapper: keep its contents
+    let attrs = '';
+    for (const a of Array.from(node.attributes || [])) {
+      const an = a.name.toLowerCase();
+      if (MATHML_ATTRS.has(an) && !/^on/.test(an)) attrs += ` ${an}="${escHtml(a.value)}"`;
+    }
+    return `<${name}${attrs}>${inner}</${name}>`;
+  }
+  CE._serializeMathML = serializeMathML;
+
   function renderMath(el) {
     const tex = el.querySelector('annotation[encoding="application/x-tex"]');
     if (!tex) return null;
     const src = (tex.textContent || '').trim();
     if (!src) return '';
     const display = el.classList.contains('katex-display') || !!el.closest('.katex-display');
+
+    const mathNode = el.querySelector('math');
+    if (mathNode) {
+      try {
+        const mm = serializeMathML(mathNode);
+        if (mm) CE._mathCapture.set(mathKey(src), { mathml: mm, display });
+      } catch (e) { /* capture is best-effort; markdown still carries the TeX */ }
+    }
     return display ? `\n\n$$\n${src}\n$$\n\n` : `$${src}$`;
+  }
+
+  /* Inline <svg> — a mermaid diagram or a chart ChatGPT drew. Its text nodes
+     concatenate into gibberish and it carries an embedded <style>, so never walk
+     into it; leave a short placeholder instead. (Real pictures are <img>, handled
+     separately, so they are unaffected.) */
+  function svgPlaceholder(el) {
+    const id = (el.getAttribute && el.getAttribute('id')) || '';
+    const mermaid = /mermaid/i.test(id) || (el.closest && !!el.closest('[class*="mermaid"]'));
+    return mermaid ? '\n\n> **[Mermaid diagram]**\n\n' : '\n\n*[Embedded image]*\n\n';
   }
 
   function walk(node) {
@@ -110,11 +180,15 @@
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
 
     const el = node;
-    const tag = el.tagName;
+    // SVG elements report a lowercase tagName ("svg", "style"), so normalise it;
+    // otherwise an embedded <style> slips past SKIP_TAGS and dumps CSS into the text.
+    const tag = (el.tagName || '').toUpperCase();
 
     if (SKIP_TAGS.has(tag)) return '';
     if (el.getAttribute('aria-hidden') === 'true') return '';
     if (el.classList.contains('sr-only')) return '';
+
+    if (tag === 'SVG') return svgPlaceholder(el);
 
     if (el.classList.contains('katex') || el.classList.contains('katex-display')) {
       const math = renderMath(el);
@@ -163,6 +237,9 @@
       }
       case 'IMG': {
         const src = el.getAttribute('src') || '';
+        // Citation/source favicons ride along as tiny images; they are interface
+        // furniture, not content. Drop them so they stop appearing as ![image].
+        if (/\/s2\/favicons|[/.]favicon/i.test(src)) return '';
         const alt = el.getAttribute('alt') || 'image';
         return src ? `![${alt}](${src})` : '';
       }
@@ -220,6 +297,20 @@
     return /^(https?:|mailto:|data:image\/)/i.test(u.trim()) ? escHtml(u.trim()) : '#';
   }
 
+  /* Turn TeX back into rendered maths for HTML/PDF. If extraction captured the
+     page's MathML for this exact expression, emit that (Firefox renders MathML
+     natively, in the HTML file and in print). Otherwise fall back to the TeX
+     source as code, so an equation degrades to readable text, never vanishes. */
+  function mathHtml(tex, display) {
+    const key = CE._mathKey ? CE._mathKey(tex) : String(tex).replace(/\s+/g, ' ').trim();
+    const cap = CE._mathCapture && CE._mathCapture.get(key);
+    if (cap && cap.mathml) {
+      return display ? `<div class="math math-display">${cap.mathml}</div>` : cap.mathml;
+    }
+    const t = escHtml(String(tex).trim());
+    return display ? `<pre class="math"><code>${t}</code></pre>` : `<code class="math">${t}</code>`;
+  }
+
   function inlineHtml(src) {
     let s = escHtml(src);
 
@@ -235,6 +326,13 @@
     s = s.replace(/\\([\\`*[\]_~])/g, (_, ch) => {
       literals.push(ch);
       return `\u0001${literals.length - 1}\u0001`;
+    });
+
+    // Inline maths: $…$. Only rewrite when the page gave us MathML for it, so a
+    // bare dollar sign (prices, shell vars) is never mistaken for an equation.
+    s = s.replace(/\$([^$\n]+)\$/g, (whole, tex) => {
+      const key = CE._mathKey ? CE._mathKey(tex) : tex;
+      return CE._mathCapture && CE._mathCapture.has(key) ? mathHtml(tex, false) : whole;
     });
 
     // The URL part allows one level of nested parens, so links like
@@ -325,6 +423,16 @@
         continue;
       }
 
+      // Display maths: a $$ line, its body, a closing $$ line.
+      if (/^\s*\$\$\s*$/.test(line)) {
+        const buf = [];
+        i++;
+        while (i < lines.length && !/^\s*\$\$\s*$/.test(lines[i])) buf.push(lines[i++]);
+        i++;
+        out.push(mathHtml(buf.join('\n'), true));
+        continue;
+      }
+
       const heading = /^(#{1,6})\s+(.*)$/.exec(line);
       if (heading) {
         const n = heading[1].length;
@@ -368,7 +476,7 @@
       while (
         i < lines.length &&
         !/^\s*$/.test(lines[i]) &&
-        !/^\s*(#{1,6}\s|>|`{3,}|~{3,}|\|)/.test(lines[i]) &&
+        !/^\s*(#{1,6}\s|>|`{3,}|~{3,}|\||\$\$\s*$)/.test(lines[i]) &&
         !LIST_RE.test(lines[i])
       ) {
         para.push(lines[i++]);
